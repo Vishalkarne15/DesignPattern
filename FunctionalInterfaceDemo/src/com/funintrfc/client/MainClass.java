@@ -2,6 +2,7 @@ package com.funintrfc.client;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -33,5 +34,10 @@ public class MainClass {
 		System.out.println("============= empSal > 125000 ============");
 		Predicate<Employee> predicateEmp1 = empPred -> empPred.getSal()<125000;
 		empList.stream().filter(predicateEmp1).collect(Collectors.toList()).forEach(conEmp);
+		
+		empList.stream()
+		.sorted(Comparator.comparing(Employee::getSal).reversed())
+		.collect(Collectors.toList())
+		.forEach(empComparator->System.out.println(empComparator));
 	}
 }
