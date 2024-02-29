@@ -8,6 +8,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.funintrfc.model.Employee;
 
@@ -35,9 +36,23 @@ public class MainClass {
 		Predicate<Employee> predicateEmp1 = empPred -> empPred.getSal()<125000;
 		empList.stream().filter(predicateEmp1).collect(Collectors.toList()).forEach(conEmp);
 		
+		System.out.println("============= Comparator empSal reversed ============");
 		empList.stream()
 		.sorted(Comparator.comparing(Employee::getSal).reversed())
 		.collect(Collectors.toList())
 		.forEach(empComparator->System.out.println(empComparator));
+		
+		System.out.println("============= combinedStream empSal with flat map============");
+		List<Employee> empList1 = new ArrayList<>();
+		empList1.add(new Employee(7, "Shiwani", 90000));
+		empList1.add(new Employee(8, "Shraddha", 80000));
+		
+		Stream<Employee> combinedStream = Stream.of(empList1,empList).flatMap(Collection::stream);
+		Collection<Employee> colleEmployees = combinedStream.collect(Collectors.toList());
+		colleEmployees.forEach(combinedEmp->System.out.println(combinedEmp));
+		
+		System.out.println("============= combinedStream empSal with out flat map============");
+		Collection<List<Employee>> colleEmployees1 = Stream.of(empList1,empList).collect(Collectors.toList());
+		colleEmployees1.forEach(combinedEmp->System.out.println(combinedEmp));
 	}
 }
