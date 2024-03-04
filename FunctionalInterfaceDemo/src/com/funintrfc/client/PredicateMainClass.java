@@ -10,7 +10,6 @@ public class PredicateMainClass {
 
 	public static void main(String[] args) {
 		
-		//Printing employee having salary more than 120000
 		System.out.println("Start Printing employee having salary more than 120000");
 		Predicate<Employee> predicateEmployeeSal = predEmpLambda -> predEmpLambda.getSal()>120000;
 		EmployeeCollection.empCollection1().stream().filter(predicateEmployeeSal).forEach(System.out::println);
@@ -24,6 +23,8 @@ public class PredicateMainClass {
 				.collect(Collectors.toList());
 		collect.forEach(System.out::println);
 		System.out.println("Start Printing employee having name start with E");
+		
+		
 		
 	}
 
