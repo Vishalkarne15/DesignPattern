@@ -1,0 +1,304 @@
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BatchApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(BatchApplication.class, args);
+    }
+}
+
+==========
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+import lombok.RequiredArgsConstructor;
+
+@Configuration
+@EnableBatchProcessing
+@RequiredArgsConstructor
+@EnableTransactionManagement
+public class BatchConfig {
+
+	@Autowired
+    private  JobBuilderFactory jobBuilderFactory;
+	@Autowired
+    private  StepBuilderFactory stepBuilderFactory;
+	@Autowired
+    private  ManagerWorkerTasklet tasklet;
+
+    @Bean
+    Step managerWorkerStep() {
+        return stepBuilderFactory.get("managerWorkerStep")
+                .tasklet(tasklet)
+                .build();
+    }
+
+    @Bean
+    Job managerWorkerJob() {
+        return jobBuilderFactory.get("managerWorkerJob")
+                .start(managerWorkerStep())
+                .build();
+    }
+}
+
+=========
+import javax.persistence.Entity;
+import javax.persistence.Id;
+
+import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+
+@Entity
+@Data
+@Setter
+@Getter
+public class BranchDetails {
+    @Id
+    private Long id;
+    private String branchCode;
+}
+
+=========
+import javax.persistence.EntityManager;
+import javax.persistence.ParameterMode;
+import javax.persistence.PersistenceContext;
+import javax.persistence.StoredProcedureQuery;
+
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+@Repository
+public class BranchProcedureRepository {
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Transactional
+    public String callStoredProcedure(int inputBranchId) {
+        StoredProcedureQuery query = entityManager
+                .createStoredProcedureQuery("get_all_branches")
+                .registerStoredProcedureParameter("branch_id", Integer.class, ParameterMode.INOUT)
+                .registerStoredProcedureParameter("status", String.class, ParameterMode.INOUT)
+                .setParameter("branch_id", inputBranchId)
+                .setParameter("status", "INIT");
+
+        query.execute();
+
+        Integer updatedId = (Integer) query.getOutputParameterValue("branch_id");
+        String status = (String) query.getOutputParameterValue("status");
+
+        return "Branch ID: " + updatedId + ", Status: " + status;
+    }
+}
+
+========
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+
+public interface BranchRepository extends JpaRepository<BranchDetails, Long> {
+    @Query(value = "CALL get_all_branches()", nativeQuery = true)
+    List<BranchDetails> fetchFromStoredProcedure();
+}
+
+========
+import javax.persistence.EntityManagerFactory;
+import javax.sql.DataSource;
+
+import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@Configuration
+@EnableTransactionManagement
+public class JpaConfig {
+
+    @Bean
+    LocalContainerEntityManagerFactoryBean entityManagerFactory(EntityManagerFactoryBuilder builder,
+                                                                       DataSource dataSource) {
+        return builder
+                .dataSource(dataSource)
+                //.packages("com.example.model")
+                .persistenceUnit("default")
+                .build();
+    }
+
+    @Bean
+    PlatformTransactionManager transactionManager(EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+}
+
+======
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.FutureTask;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import lombok.RequiredArgsConstructor;
+
+@Service
+@RequiredArgsConstructor
+public class ManagerService {
+
+	@Autowired
+    private WorkerTaskFactory taskFactory;
+
+    public Thread startManager(List<BranchDetails> branches, BlockingQueue<FutureTask<String>> queue) {
+        Thread manager = new Thread(() -> {
+            for (BranchDetails branch : branches) {
+                FutureTask<String> task = taskFactory.create(branch);
+                while (!queue.offer(task)) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+        });
+        manager.start();
+        return manager;
+    }
+}
+
+======
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+
+import org.springframework.batch.core.StepContribution;
+import org.springframework.batch.core.scope.context.ChunkContext;
+import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import lombok.RequiredArgsConstructor;
+
+@Component
+@RequiredArgsConstructor
+public class ManagerWorkerTasklet implements Tasklet {
+
+	@Autowired
+    private  BranchProcedureRepository branchProcedureRepository;
+	@Autowired
+    private  ManagerService managerService;
+	@Autowired
+    private  WorkerService workerService;
+
+    private final ExecutorService executor = Executors.newFixedThreadPool(3);
+    private final BlockingQueue<FutureTask<String>> queue = new ArrayBlockingQueue<>(5);
+
+    @Override
+    public RepeatStatus execute(StepContribution contribution, ChunkContext chunkContext) {
+        List<BranchDetails> branches = branchProcedureRepository.fetchFromStoredProcedure();
+
+        Thread manager = managerService.startManager(branches, queue);
+        List<Thread> workers = workerService.startWorkers(3, queue, executor);
+
+        try {
+            manager.join();
+            while (!queue.isEmpty()) {
+                Thread.sleep(200);
+            }
+            workers.forEach(Thread::interrupt);
+            executor.shutdown();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        return RepeatStatus.FINISHED;
+    }
+}
+
+=====
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SpringBatchManagerWorkerApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(SpringBatchManagerWorkerApplication.class, args);
+	}
+
+}
+
+=====
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+
+@Service
+public class WorkerService {
+
+    public List<Thread> startWorkers(int count, BlockingQueue<FutureTask<String>> queue, ExecutorService executor) {
+        List<Thread> workers = new ArrayList<>();
+
+        for (int i = 0; i < count; i++) {
+            Thread worker = new Thread(() -> {
+                while (!Thread.currentThread().isInterrupted()) {
+                    try {
+                        FutureTask<String> task = queue.poll(200, TimeUnit.MILLISECONDS);
+                        if (task != null) {
+                            executor.execute(task);
+                            String result = task.get();
+                            System.out.println("Worker result: " + result);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } catch (ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            worker.start();
+            workers.add(worker);
+        }
+        return workers;
+    }
+}
+
+=======
+@Component
+public class WorkerTaskFactory {
+    public FutureTask<String> create(BranchDetails branch) {
+    	/*
+    	return new FutureTask<String>(() -> {
+            // Simulate data enrichment
+            Thread.sleep(500);
+            return "Processed branch: " + branch.getBranchCode();
+        });
+    	*/
+    	return new FutureTask<>(() -> {
+    	    // do work
+    	    Thread.sleep(200);
+    	    return "Done"; // must return something
+    	});
+    }
+}
