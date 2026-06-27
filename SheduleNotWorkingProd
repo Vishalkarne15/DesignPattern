@@ -253,3 +253,7 @@ spring.quartz.job-store-type = jdbc
 spring.quartz.jdbc.initialize-schema=ALWAYS
 
 revers.feed.pmvlp.trigger.time=0 10 01-23 * * ?
+
+
+START_TIME :: 1782392321000
+NEXT_FIRE_TIME :: 1782395400000
