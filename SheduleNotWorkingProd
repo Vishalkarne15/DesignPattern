@@ -1,0 +1,255 @@
+package com.sbi.rlms.scheduler.config.trigger;
+
+import org.quartz.CronTrigger;
+import org.quartz.JobDetail;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+
+import com.sbi.rlms.scheduler.jobs.ReversFeedPMVLPQuartzJob;
+import com.sbi.rlms.scheduler.jobs.ReversFeedRetriggerQuartzJob;
+
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+
+@Configuration
+@Getter
+@Setter
+@Slf4j
+public class ReverseFeedPMVLPTriggerConfig {
+	@Value("${revers.feed.pmvlp.trigger.time}")
+	private String reverseFeedPMVLPTriggerTime;
+	@Bean
+	public JobDetailFactoryBean reverseFeedPMVLPQuartzJobDetail() {
+		JobDetailFactoryBean jobDetailFactory = new JobDetailFactoryBean();
+		jobDetailFactory.setJobClass(ReversFeedPMVLPQuartzJob.class);
+		jobDetailFactory.setDescription("reversFeedPMVLPQuartzJob");
+		jobDetailFactory.setDurability(true);
+		return jobDetailFactory;
+	}
+	@Bean
+	public CronTriggerFactoryBean reverseFeedPMVLPQuartzJobTrigger(@Autowired @Qualifier("reverseFeedPMVLPQuartzJobDetail") JobDetail job) {
+		CronTriggerFactoryBean cronTriggerFactoryBean = new CronTriggerFactoryBean();
+		cronTriggerFactoryBean.setJobDetail(job);
+		cronTriggerFactoryBean.setCronExpression(reverseFeedPMVLPTriggerTime);
+		cronTriggerFactoryBean.setName("reversFeedPMVLPQuartzJob");
+		cronTriggerFactoryBean.setMisfireInstruction(CronTrigger.MISFIRE_INSTRUCTION_FIRE_ONCE_NOW);
+		return cronTriggerFactoryBean;
+	}
+}
+
+=====================================================
+
+package com.sbi.rlms.scheduler.config;
+
+import java.util.Properties;
+import javax.sql.DataSource;
+import org.quartz.JobDetail;
+import org.quartz.Trigger;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.quartz.SchedulerFactoryBean;
+import org.springframework.scheduling.quartz.SpringBeanJobFactory;
+
+import com.sbi.rlms.scheduler.listeners.RlmsSchedulerJobListener;
+
+import lombok.Getter;
+import lombok.Setter;
+
+@Configuration
+@Getter
+@Setter
+public class RlmsSchedulerConfig {
+
+	@Autowired
+	@Qualifier("reverseFeedPMVLPQuartzJobDetail")
+	JobDetail reverseFeedPMVLPQuartzJobDetail;
+	
+	@Autowired
+	@Qualifier("reverseFeedPMVLPQuartzJobTrigger")
+	Trigger reverseFeedPMVLPQuartzJobTrigger;
+	
+	@Bean
+	public SchedulerFactoryBean rlmsQuatzSchedulerFactoryBean(DataSource quartzDataSource) {
+		SchedulerFactoryBean schedulerFactory = new SchedulerFactoryBean();
+		schedulerFactory.setJobFactory(springBeanJobFactory());
+		schedulerFactory.setTriggers(reverseFeedPMVLPQuartzJobTrigger);
+		schedulerFactory.setJobDetails(reverseFeedPMVLPQuartzJobDetail);
+		schedulerFactory.setGlobalJobListeners(new RlmsSchedulerJobListener());
+		Properties quartzProperties = new Properties();
+		quartzProperties.put("org.quartz.threadPool.threadCount", quartzThreadCount);
+		schedulerFactory.setQuartzProperties(quartzProperties);
+		schedulerFactory.setDataSource(quartzDataSource);
+		return schedulerFactory;
+	}
+
+	@Bean
+	public SpringBeanJobFactory springBeanJobFactory() {
+		AutoWiringSpringBeanJobFactory jobFactory = new AutoWiringSpringBeanJobFactory();
+		jobFactory.setApplicationContext(applicationContext);
+		return jobFactory;
+	}
+
+}
+
+====================================================
+
+package com.sbi.rlms.scheduler.jobs;
+
+import java.util.Date;
+
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.JobParametersInvalidException;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
+import org.springframework.batch.core.repository.JobRestartException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.quartz.QuartzJobBean;
+
+import com.sbi.rlms.scheduler.exceptions.BatchSchedulerRunTimeException;
+
+public class ReversFeedPMVLPQuartzJob extends QuartzJobBean {
+
+	@Autowired
+	JobLauncher batchJobLauncher;
+	
+	@Autowired
+	Job reversFeedPMVLPBatchJob;
+
+	@Override
+	protected void executeInternal(JobExecutionContext arg0) throws JobExecutionException {
+		// TODO Auto-generated method stub
+		try {
+			JobParametersBuilder jobParametersBuilder = new JobParametersBuilder();
+			jobParametersBuilder.addLong("dateTimeInMilliSeconds", new Date().getTime());
+			batchJobLauncher.run(reversFeedPMVLPBatchJob, jobParametersBuilder.toJobParameters());
+		} catch (JobExecutionAlreadyRunningException | JobRestartException | JobInstanceAlreadyCompleteException
+				| JobParametersInvalidException e) {
+			throw new BatchSchedulerRunTimeException(e.getLocalizedMessage());
+		}
+	}
+
+}
+
+======================================================
+
+
+package com.sbi.rlms.scheduler.config.batch;
+
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.sbi.rlms.scheduler.constants.RlmsSchedulerConstants;
+import com.sbi.rlms.scheduler.tasklet.ReversFeedPMVLPBatchTasklet;
+import com.sbi.rlms.scheduler.tasklet.ReversFeedRetriggerBatchTasklet;
+
+@Configuration
+public class ReverseFeedPMVLPBatchConfig {
+
+	@Autowired
+	JobBuilderFactory jobBuilderFactory;
+	
+	@Autowired
+	private StepBuilderFactory stepBuilderFactory;
+	
+	@Bean
+	public Job reversFeedPMVLPBatchJob() {
+		return jobBuilderFactory.get(RlmsSchedulerConstants.REVERS_FEED_PMVLP)
+				.incrementer(new RunIdIncrementer())
+				.start(reversFeedPMVLPBatchStep())
+				.build();
+		}
+	
+	@Bean
+	public Step reversFeedPMVLPBatchStep() {
+		return stepBuilderFactory.get("reversFeedPMVLPBatchStep")
+				.tasklet(reversFeedPMVLPBatchTasklet()).build();
+	}
+	
+	@Bean
+	public ReversFeedPMVLPBatchTasklet reversFeedPMVLPBatchTasklet() {
+		return new  ReversFeedPMVLPBatchTasklet();
+	}
+
+
+	
+}
+
+
+
+
+======================================================
+
+package com.sbi.rlms.scheduler.tasklet;
+
+import java.util.Map;
+
+import org.springframework.batch.core.StepContribution;
+import org.springframework.batch.core.scope.context.ChunkContext;
+import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+
+import com.sbi.rlms.scheduler.constants.RlmsSchedulerConstants;
+import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanMainRequestDTO;
+import com.sbi.rlms.scheduler.service.ReversFeedPMVLPService;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+public class ReversFeedPMVLPBatchTasklet implements Tasklet {
+
+	@Value("${revers.feed.pmvlp.manual.enable}")
+	private String pmvlpTriggerEnable;
+	
+	@Autowired
+	private ReversFeedPMVLPService reversFeedPMVLPService;
+	
+	@Override
+	public RepeatStatus execute(StepContribution contribution, ChunkContext context) throws Exception {
+		log.info("Start :: Calling PMVLP Service");
+		
+		log.error("is pmvlpTriggerEnable :: " + pmvlpTriggerEnable);
+		if(pmvlpTriggerEnable.equalsIgnoreCase(RlmsSchedulerConstants.Y)) {
+			reversFeedPMVLPService.loadPMVLPMannualJSONRequest();
+		}
+		
+		/*
+		Map<Long, ELVLPUpdateLoanMainRequestDTO> loadPMVLPJSONRequestMap = reversFeedPMVLPService.loadPMVLPJSONRequest();
+		reversFeedPMVLPService.updatePMVLPReqResp(loadPMVLPJSONRequestMap);
+		log.info("End :: Calling PMVLP Service");
+		*/
+		return RepeatStatus.FINISHED;
+		
+	}
+
+}
+
+==================================================
+
+Properties
+
+spring.quartz.job-store-type = jdbc
+spring.quartz.jdbc.initialize-schema=ALWAYS
+
+revers.feed.pmvlp.trigger.time=0 10 01-23 * * ?
