@@ -263,20 +263,14 @@ public class ReversFeedPMVLPBatchTasklet implements Tasklet {
 
 ==================================================
 
-
 package com.sbi.rlms.scheduler.service.impl;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collector;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
@@ -288,8 +282,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.HttpClientErrorException;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.sbi.rlms.commons.util.AppUtils;
 import com.sbi.rlms.commons.util.ConversionUtils;
@@ -304,6 +296,7 @@ import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanBankRequestDtlsAbstract;
 import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanMainRequestDTO;
 import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanStatusRequestDTO;
 import com.sbi.rlms.scheduler.service.ReversFeedPMVLPService;
+import com.sbi.rlms.scheduler.service.ReversFeedPMVLPUpdationService;
 import com.sbi.rlms.scheduler.util.ApiUtil;
 import com.sbi.rlms.scheduler.util.SchedulerUtils;
 
@@ -337,6 +330,9 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 	
 	@Autowired
 	private SchedulerUtils schedulerUtils;
+	
+	@Autowired
+	private ReversFeedPMVLPUpdationService reversFeedPMVLPUpdationService;
 	
 	@Override
 	public Map<Long,ELVLPUpdateLoanMainRequestDTO> loadPMVLPJSONRequest() {
@@ -409,31 +405,31 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 						
 						if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
 								&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("S")) {
-							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+							reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
 						} else if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
 								&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("F")) {
-							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+							reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
 						} else {
-							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+							reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 								null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
 						}
 					} else if (null != elVlpEisUpdateLoanStatusResponseDTO
 							&& null != elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus()
 							&& elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus().equals("1")) {
-							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+						reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
 					} else {
-						updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+						reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 								null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
 					}
 				}catch (HttpClientErrorException e) {
-					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+					reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 							Long.valueOf(e.getStatusCode().value())+"-"+e.getStatusText(), RlmsSchedulerConstants.PMVLP_CHNL_ID);
 					log.error("HttpClientErrorException Ocurred : {}", e.getMessage(), e);
 				}catch (Exception e) {
-					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+					reversFeedPMVLPUpdationService.updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 							e.getMessage() , RlmsSchedulerConstants.PMVLP_CHNL_ID);
 					log.error("HttpClientErrorException Ocurred : {}", e.getMessage(), e);
 				}
@@ -450,7 +446,6 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 		return elVlpEisUpdateLoanStatusResponseDTO;
 	}
 	
-	@Transactional
 	@Override
 	public void updateRevFeedStatusOfPMVLP(Long revFeedId, String successFlag,
 			String elVlpUpdateLoanMainRequestDTOStr, 
@@ -485,7 +480,6 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
         
 	}
 	*/
-	
 	
 	@Override
 	public Boolean prepareAndPushData(int batchSize) {
@@ -656,6 +650,51 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 			log.error("HttpClientErrorException Ocurred :"	+e.getMessage());
 		}
 		return elVlpEisUpdateLoanStatusResponseDTO;
+	}
+	
+}
+
+==================================================
+
+package com.sbi.rlms.scheduler.service.impl;
+
+import java.util.Date;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.sbi.rlms.scheduler.data.entity.ApplELReverseFeedDataTrn;
+import com.sbi.rlms.scheduler.data.entity.ApplELReverseFeedReqRespTrn;
+import com.sbi.rlms.scheduler.data.repository.ApplELReverseFeedDataRepository;
+import com.sbi.rlms.scheduler.data.repository.ApplELReverseFeedReqRespRepository;
+import com.sbi.rlms.scheduler.service.ReversFeedPMVLPUpdationService;
+
+@Service
+public class ReversFeedPMVLPUpdationServiceImpl implements ReversFeedPMVLPUpdationService{
+
+	@Autowired
+	private ApplELReverseFeedReqRespRepository applELReverseFeedReqRespRepository;
+	
+	@Autowired
+	private ApplELReverseFeedDataRepository applELReverseFeedDataRepository;
+	
+	@Transactional
+	@Override
+	public void updateRevFeedStatusOfPMVLP(Long revFeedId, String successFlag,
+			String elVlpUpdateLoanMainRequestDTOStr, 
+			String elVlpEisUpdateLoanStatusResponseDTOStr, Long channelId) {
+		Optional<ApplELReverseFeedDataTrn> findByApplRevFeedId = applELReverseFeedDataRepository.findByApplRevFeedId(revFeedId);
+		ApplELReverseFeedReqRespTrn revFeedReqRespData = applELReverseFeedReqRespRepository.findByApplELReverseFeedDataTrnAndChanelId(findByApplRevFeedId.get(), channelId);
+		if(revFeedReqRespData != null) {
+			revFeedReqRespData.setJsonReq(elVlpUpdateLoanMainRequestDTOStr);
+			revFeedReqRespData.setJsonResp(elVlpEisUpdateLoanStatusResponseDTOStr);
+			revFeedReqRespData.setNoRetrys((revFeedReqRespData.getNoRetrys()+1));
+			revFeedReqRespData.setLastModDate(new Date());
+			revFeedReqRespData.setIsSuccess(successFlag);
+			applELReverseFeedReqRespRepository.save(revFeedReqRespData);
+		}
 	}
 	
 }
