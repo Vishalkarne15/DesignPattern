@@ -450,6 +450,7 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 		return elVlpEisUpdateLoanStatusResponseDTO;
 	}
 	
+	@Transactional
 	@Override
 	public void updateRevFeedStatusOfPMVLP(Long revFeedId, String successFlag,
 			String elVlpUpdateLoanMainRequestDTOStr, 
@@ -485,7 +486,7 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 	}
 	*/
 	
-	@Transactional
+	
 	@Override
 	public Boolean prepareAndPushData(int batchSize) {
 		
@@ -658,7 +659,6 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 	}
 	
 }
-
 
 
 
