@@ -194,9 +194,6 @@ public class ReverseFeedPMVLPBatchConfig {
 	
 }
 
-
-
-
 ======================================================
 
 package com.sbi.rlms.scheduler.tasklet;
@@ -247,13 +244,409 @@ public class ReversFeedPMVLPBatchTasklet implements Tasklet {
 
 ==================================================
 
+
+package com.sbi.rlms.scheduler.service.impl;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.DateFormatUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.sbi.rlms.commons.util.AppUtils;
+import com.sbi.rlms.commons.util.ConversionUtils;
+import com.sbi.rlms.scheduler.constants.RlmsSchedulerConstants;
+import com.sbi.rlms.scheduler.data.entity.ApplELReverseFeedDataTrn;
+import com.sbi.rlms.scheduler.data.entity.ApplELReverseFeedReqRespTrn;
+import com.sbi.rlms.scheduler.data.repository.ApplELReverseFeedDataRepository;
+import com.sbi.rlms.scheduler.data.repository.ApplELReverseFeedReqRespRepository;
+import com.sbi.rlms.scheduler.dto.ELVLPCheckLoanStatusResponseDTO;
+import com.sbi.rlms.scheduler.dto.ELVLPUpdateCumulativeDisbursementRequestDTO;
+import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanBankRequestDtlsAbstract;
+import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanMainRequestDTO;
+import com.sbi.rlms.scheduler.dto.ELVLPUpdateLoanStatusRequestDTO;
+import com.sbi.rlms.scheduler.service.ReversFeedPMVLPService;
+import com.sbi.rlms.scheduler.util.ApiUtil;
+import com.sbi.rlms.scheduler.util.SchedulerUtils;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
+
+	
+	@Autowired
+	private ApplELReverseFeedReqRespRepository applELReverseFeedReqRespRepository;
+	
+	@Autowired
+	private ApplELReverseFeedDataRepository applELReverseFeedDataRepository;
+	
+	@Value("${revers.feed.pmvlp.algorithm.mode.padding}")
+	private String rsaAlgorithm;
+	
+	@Value("${revers.feed.pmvlp.pool.batch.size}")
+	private String batchSizePool;
+	
+	@Value("${revers.feed.pmvlp.iteration.flag}")
+	private String iterationFlag;
+	
+	@Value("${revers.feed.pmvlp.vlpstatusupload.inturl}")
+	private String pmvlpIntStatusUploadUrl;
+	
+	@Value("${revers.feed.pmvlp.vlpcumulativeupload.inturl}")
+	private String pmvlpIntCumulativeUploadUrl;
+	
+	@Autowired
+	private SchedulerUtils schedulerUtils;
+	
+	@Override
+	public Map<Long,ELVLPUpdateLoanMainRequestDTO> loadPMVLPJSONRequest() {
+		
+		List<ApplELReverseFeedReqRespTrn> failListData = applELReverseFeedReqRespRepository.findByIsSuccessAndChanelId(RlmsSchedulerConstants.N,RlmsSchedulerConstants.PMVLP_CHNL_ID);
+
+		Map<Long,ELVLPUpdateLoanMainRequestDTO> elVLPUpdateLoanMainRequestDTOMap = new HashMap<>();
+		failListData.stream().filter(reqFreqOfFail -> (reqFreqOfFail.getNoRetrys()<3 && null!=reqFreqOfFail.getApplELReverseFeedDataTrn() 
+				&& (reqFreqOfFail.getApplELReverseFeedDataTrn().getInitUser().equalsIgnoreCase("APPL") || reqFreqOfFail.getApplELReverseFeedDataTrn().getInitUser().equalsIgnoreCase("SCH"))))
+				.forEach(applELRevFeedReqRespTrn -> {
+			ApplELReverseFeedDataTrn revFeedDataForVLP = applELRevFeedReqRespTrn.getApplELReverseFeedDataTrn();
+			ELVLPUpdateLoanStatusRequestDTO elVlpUpdateLoanStatusRequestDTO = new ELVLPUpdateLoanStatusRequestDTO();
+			
+			if(StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG5")) {
+				
+				elVlpUpdateLoanStatusRequestDTO.setStudentAppID(revFeedDataForVLP.getStudentAppId()!=null ? String.valueOf(revFeedDataForVLP.getStudentAppId()):null);
+				elVlpUpdateLoanStatusRequestDTO.setBankRefID(revFeedDataForVLP.getSourceApplicationRefNo());
+				elVlpUpdateLoanStatusRequestDTO.setAppStatus(revFeedDataForVLP.getAppStatus());
+				elVlpUpdateLoanStatusRequestDTO.setRemarks(revFeedDataForVLP.getAppRemarks());
+				elVlpUpdateLoanStatusRequestDTO.setBranchIFSC(revFeedDataForVLP.getIfscCode());
+				elVlpUpdateLoanStatusRequestDTO.setLoanAccount(revFeedDataForVLP.getAccountNumber());
+				elVlpUpdateLoanStatusRequestDTO.setLoanSanctionDt(revFeedDataForVLP.getSanctionedDate() != null
+						? DateFormatUtils.format(revFeedDataForVLP.getSanctionedDate(), "dd/MM/yyyy")
+						: null);
+				elVlpUpdateLoanStatusRequestDTO.setLoanSanctionAmt(revFeedDataForVLP.getSanctionedAmount()!=null ? String.valueOf(revFeedDataForVLP.getSanctionedAmount()):null);
+				elVlpUpdateLoanStatusRequestDTO.setROI(revFeedDataForVLP.getRoi()!=null ? String.valueOf(revFeedDataForVLP.getRoi()):null);
+				elVlpUpdateLoanStatusRequestDTO.setLoanScheme(revFeedDataForVLP.getLoanScheme()!=null ? String.valueOf(revFeedDataForVLP.getLoanScheme()):null);
+				
+			}else if(StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG16")) {
+				
+				elVlpUpdateLoanStatusRequestDTO.setStudentAppID(revFeedDataForVLP.getStudentAppId()!=null ? String.valueOf(revFeedDataForVLP.getStudentAppId()):null);
+				elVlpUpdateLoanStatusRequestDTO.setBankRefID(revFeedDataForVLP.getSourceApplicationRefNo());
+				elVlpUpdateLoanStatusRequestDTO.setAppStatus(revFeedDataForVLP.getAppStatus());
+				elVlpUpdateLoanStatusRequestDTO.setRemarks(revFeedDataForVLP.getAppRemarks());
+				elVlpUpdateLoanStatusRequestDTO.setBranchIFSC(revFeedDataForVLP.getIfscCode());
+				
+			}else if(StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG36")) {
+				
+			}
+			
+			ELVLPUpdateLoanBankRequestDtlsAbstract elVlpUpdateLoanBankRequestDtlsAbstract = new ELVLPUpdateLoanBankRequestDtlsAbstract();
+			elVlpUpdateLoanBankRequestDtlsAbstract.setBankResponseAbstract(elVlpUpdateLoanStatusRequestDTO);
+			elVlpUpdateLoanBankRequestDtlsAbstract.setBankCode("SBIN");
+			ELVLPUpdateLoanMainRequestDTO elVlpUpdateLoanMainRequestDTO = new ELVLPUpdateLoanMainRequestDTO();
+			elVlpUpdateLoanMainRequestDTO.setBankResponseDtlsAbstract(elVlpUpdateLoanBankRequestDtlsAbstract);
+			
+			elVLPUpdateLoanMainRequestDTOMap.put(revFeedDataForVLP.getApplRevFeedId(),elVlpUpdateLoanMainRequestDTO);
+			log.error("elVlpUpdateLoanMainRequestDTO Json :" + new Gson().toJson(elVlpUpdateLoanMainRequestDTO));
+		});
+		
+		return elVLPUpdateLoanMainRequestDTOMap;
+		
+	}
+
+	@Override
+	public void updatePMVLPReqResp(Map<Long,ELVLPUpdateLoanMainRequestDTO> elVLPUpdateLoanMainRequestDTOMap) {
+		
+		elVLPUpdateLoanMainRequestDTOMap.entrySet().stream().forEach(requestData -> {
+			
+			try {
+					ELVLPCheckLoanStatusResponseDTO elVlpEisUpdateLoanStatusResponseDTO = callPMVLPStatusUploadApi(requestData.getValue());
+					log.error("elVlpEisUpdateLoanStatusResponseStr Json :"	+ new Gson().toJson(elVlpEisUpdateLoanStatusResponseDTO));
+					
+					if (null != elVlpEisUpdateLoanStatusResponseDTO
+							&& null != elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus()
+							&& elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus().equals("0")
+							&& null != elVlpEisUpdateLoanStatusResponseDTO.getEisResponse()
+							&& null != elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getVlpResponse()
+							&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getVlpResponse().size() > 0) {
+						
+						if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
+								&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("S")) {
+							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+						} else if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
+								&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("F")) {
+							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+						} else {
+							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+								null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
+						}
+					} else if (null != elVlpEisUpdateLoanStatusResponseDTO
+							&& null != elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus()
+							&& elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus().equals("1")) {
+							updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+								ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					} else {
+						updateRevFeedStatusOfPMVLP(requestData.getKey(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+								null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					}
+				}catch (HttpClientErrorException e) {
+					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+							Long.valueOf(e.getStatusCode().value())+"-"+e.getStatusText(), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					log.error("HttpClientErrorException Ocurred :"	+e.getStackTrace());
+				}catch (Exception e) {
+					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
+							e.getMessage() , RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					log.error("HttpClientErrorException Ocurred :"	+e.getStackTrace());
+				}
+			
+		});
+		
+	}
+	
+	@Override
+	public ELVLPCheckLoanStatusResponseDTO callPMVLPStatusUploadApi(ELVLPUpdateLoanMainRequestDTO elVLPUpdateLoanMainRequestDTO) {
+		ELVLPCheckLoanStatusResponseDTO elVlpEisUpdateLoanStatusResponseDTO = new ELVLPCheckLoanStatusResponseDTO();
+		String userToken = AppUtils.generateRlmsToken(schedulerUtils.getExternalUser(), rsaAlgorithm);
+		elVlpEisUpdateLoanStatusResponseDTO = ApiUtil.callRestTemplateIntegration(pmvlpIntStatusUploadUrl, elVLPUpdateLoanMainRequestDTO, ELVLPCheckLoanStatusResponseDTO.class, userToken);
+		return elVlpEisUpdateLoanStatusResponseDTO;
+	}
+	
+	@Override
+	public void updateRevFeedStatusOfPMVLP(Long revFeedId, String successFlag,
+			String elVlpUpdateLoanMainRequestDTOStr, 
+			String elVlpEisUpdateLoanStatusResponseDTOStr, Long channelId) {
+		Optional<ApplELReverseFeedDataTrn> findByApplRevFeedId = applELReverseFeedDataRepository.findByApplRevFeedId(revFeedId);
+		ApplELReverseFeedReqRespTrn revFeedReqRespData = applELReverseFeedReqRespRepository.findByApplELReverseFeedDataTrnAndChanelId(findByApplRevFeedId.get(), channelId);
+		if(revFeedReqRespData != null) {
+			revFeedReqRespData.setJsonReq(elVlpUpdateLoanMainRequestDTOStr);
+			revFeedReqRespData.setJsonResp(elVlpEisUpdateLoanStatusResponseDTOStr);
+			revFeedReqRespData.setNoRetrys((revFeedReqRespData.getNoRetrys()+1));
+			revFeedReqRespData.setLastModDate(new Date());
+			revFeedReqRespData.setIsSuccess(successFlag);
+			applELReverseFeedReqRespRepository.save(revFeedReqRespData);
+		}
+	}
+	
+
+	@Override
+	public void loadPMVLPMannualJSONRequest() {
+		int batchSize = Integer.parseInt(batchSizePool);
+        boolean hasMoreRecords = true;
+        while (hasMoreRecords) {
+        	hasMoreRecords=prepareAndPushData(batchSize);
+        	try {
+        		log.error("Watting for 5 second to clean.........");
+				Thread.sleep(5000l);
+			} catch (InterruptedException e) {
+				log.error("Exception in InterruptedException :: "+e.getMessage());
+			}
+        }
+        
+	}
+	
+	
+	@Transactional
+	public Boolean prepareAndPushData(int batchSize) {
+		
+		Slice<ApplELReverseFeedReqRespTrn> failListDataSlice = applELReverseFeedReqRespRepository
+				.findByIsSuccessAndChanelIdAndApplELReverseFeedDataTrn_InitUser(RlmsSchedulerConstants.N,RlmsSchedulerConstants.PMVLP_CHNL_ID,RlmsSchedulerConstants.INIT_USER_MANUAL, PageRequest.of(0, batchSize));
+    	
+    	List<ApplELReverseFeedReqRespTrn> failListData = failListDataSlice.getContent();
+    	List<ELVLPUpdateLoanMainRequestDTO> elVLPUpdateLoanMainRequestDTOMapLst = new ArrayList<>();
+    	
+    	
+    	// Tranche 1 records.
+    	failListData.stream().filter(applELRevFeedReqRespTrn-> (applELRevFeedReqRespTrn.getApplELReverseFeedDataTrn().getTrancheNo().equals(1L)))
+		.forEach(applELRevFeedReqRespTrn -> {
+			Map<Long,ELVLPUpdateLoanMainRequestDTO> elVLPUpdateLoanMainRequestDTOMap = new HashMap<>();
+			ApplELReverseFeedDataTrn revFeedDataForVLP = applELRevFeedReqRespTrn.getApplELReverseFeedDataTrn();
+			ELVLPUpdateLoanStatusRequestDTO elVlpUpdateLoanStatusRequestDTO = new ELVLPUpdateLoanStatusRequestDTO();
+			if(StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG36")
+					|| StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG5")) {
+				elVlpUpdateLoanStatusRequestDTO.setStudentAppID(revFeedDataForVLP.getStudentAppId()!=null ? String.valueOf(revFeedDataForVLP.getStudentAppId()):null);
+				elVlpUpdateLoanStatusRequestDTO.setBankRefID(revFeedDataForVLP.getSourceApplicationRefNo());
+				elVlpUpdateLoanStatusRequestDTO.setAppStatus(RlmsSchedulerConstants.PMVLP_DISBURSE_APP_STATUS);
+				elVlpUpdateLoanStatusRequestDTO.setRemarks("");
+				elVlpUpdateLoanStatusRequestDTO.setBranchIFSC(revFeedDataForVLP.getIfscCode());
+				elVlpUpdateLoanStatusRequestDTO.setLoanAccount(revFeedDataForVLP.getAccountNumber());
+				elVlpUpdateLoanStatusRequestDTO.setLoanSanctionDt(revFeedDataForVLP.getSanctionedDate() != null
+						? DateFormatUtils.format(revFeedDataForVLP.getSanctionedDate(), "dd/MM/yyyy")
+						: null);
+				elVlpUpdateLoanStatusRequestDTO.setLoanSanctionAmt(revFeedDataForVLP.getSanctionedAmount()!=null ? String.valueOf(revFeedDataForVLP.getSanctionedAmount()):null);
+				elVlpUpdateLoanStatusRequestDTO.setROI(revFeedDataForVLP.getRoi()!=null ? String.valueOf(revFeedDataForVLP.getRoi()):null);
+				elVlpUpdateLoanStatusRequestDTO.setLoanScheme(revFeedDataForVLP.getLoanScheme()!=null ? String.valueOf(revFeedDataForVLP.getLoanScheme()):null);
+				elVlpUpdateLoanStatusRequestDTO.setDisbursementDate(revFeedDataForVLP.getDisbursementDate() != null
+						? DateFormatUtils.format(revFeedDataForVLP.getDisbursementDate(), "dd/MM/yyyy")
+						: null);
+				elVlpUpdateLoanStatusRequestDTO.setDisbursedAmount(revFeedDataForVLP.getDisbursementAmount()!=null ? String.valueOf(revFeedDataForVLP.getDisbursementAmount()):null);
+			}
+			ELVLPUpdateLoanBankRequestDtlsAbstract elVlpUpdateLoanBankRequestDtlsAbstract = new ELVLPUpdateLoanBankRequestDtlsAbstract();
+			elVlpUpdateLoanBankRequestDtlsAbstract.setBankResponseAbstract(elVlpUpdateLoanStatusRequestDTO);
+			elVlpUpdateLoanBankRequestDtlsAbstract.setBankCode("SBIN");
+			ELVLPUpdateLoanMainRequestDTO elVlpUpdateLoanMainRequestDTO = new ELVLPUpdateLoanMainRequestDTO();
+			elVlpUpdateLoanMainRequestDTO.setBankResponseDtlsAbstract(elVlpUpdateLoanBankRequestDtlsAbstract);
+			elVLPUpdateLoanMainRequestDTOMapLst.add(elVlpUpdateLoanMainRequestDTO);
+			log.error("elVlpUpdateLoanMainRequestDTO Json :" + new Gson().toJson(elVlpUpdateLoanMainRequestDTO));
+			elVLPUpdateLoanMainRequestDTOMap.put(revFeedDataForVLP.getApplRevFeedId(),elVlpUpdateLoanMainRequestDTO);
+			updatePMVLPReqResp(elVLPUpdateLoanMainRequestDTOMap);
+	});
+	
+    	
+    // Tranche 2 records.
+	/*
+	failListData.stream().filter(applELRevFeedReqRespTrn-> (applELRevFeedReqRespTrn.getApplELReverseFeedDataTrn().getTrancheNo()>1L))
+	.forEach(applELRevFeedReqRespTrn -> {
+		List<ELVLPUpdateCumulativeDisbursementRequestDTO> vlpUpdateCumulativeDisbursementRequestDTOLst = new ArrayList<>();
+		ApplELReverseFeedDataTrn revFeedDataForVLP = applELRevFeedReqRespTrn.getApplELReverseFeedDataTrn();
+		Map<String, List<ELVLPUpdateCumulativeDisbursementRequestDTO>> vlpUpdateCumulativeDisbursementRequestDTOMap =  new LinkedHashMap<>();
+		ELVLPUpdateCumulativeDisbursementRequestDTO elVlpUpdateCumulativeDisbursementRequestDTO = new ELVLPUpdateCumulativeDisbursementRequestDTO();
+		if(StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG36")
+				|| StringUtils.isNotEmpty(revFeedDataForVLP.getApplStageId()) && revFeedDataForVLP.getApplStageId().equals("SG5")) {
+			elVlpUpdateCumulativeDisbursementRequestDTO.setStudentId(String.valueOf(revFeedDataForVLP.getStudentId()));
+			elVlpUpdateCumulativeDisbursementRequestDTO.setStudentAppID(String.valueOf(revFeedDataForVLP.getStudentAppId()));
+			elVlpUpdateCumulativeDisbursementRequestDTO.setBankRefID(revFeedDataForVLP.getSourceApplicationRefNo());
+			elVlpUpdateCumulativeDisbursementRequestDTO.setLoanAccNumber(revFeedDataForVLP.getAccountNumber());
+			elVlpUpdateCumulativeDisbursementRequestDTO.setDisbTranch(revFeedDataForVLP.getTrancheNo().toString());
+			elVlpUpdateCumulativeDisbursementRequestDTO.setDisbAmt(revFeedDataForVLP.getDisbursementAmount().toPlainString());
+			
+			elVlpUpdateCumulativeDisbursementRequestDTO.setCumulateDisb(revFeedDataForVLP.getTotalDisbursedAmount().toPlainString());
+			elVlpUpdateCumulativeDisbursementRequestDTO.setLoanOutstanding(revFeedDataForVLP.getOutStandingAmount().toPlainString());
+			elVlpUpdateCumulativeDisbursementRequestDTO.setDisbRemark("Disburse Tranche "+revFeedDataForVLP.getTrancheNo()); // check
+			elVlpUpdateCumulativeDisbursementRequestDTO.setDisbDate(revFeedDataForVLP.getDisbursementDate() != null
+					? new SimpleDateFormat("dd/MM/yyyy").format(revFeedDataForVLP.getDisbursementDate())
+					: null);
+			
+			try {
+				log.error("elVlpUpdateLoanMainRequestDTO Json :"
+						+ new ObjectMapper().writeValueAsString(elVlpUpdateCumulativeDisbursementRequestDTO));
+			} catch (JsonProcessingException e) {
+				e.printStackTrace();
+			}
+		}
+		vlpUpdateCumulativeDisbursementRequestDTOLst.add(elVlpUpdateCumulativeDisbursementRequestDTO);
+		vlpUpdateCumulativeDisbursementRequestDTOMap = vlpUpdateCumulativeDisbursementRequestDTOLst.stream()
+				.collect(Collectors.groupingBy(obj->obj.getStudentAppID(),LinkedHashMap::new
+						,Collectors.collectingAndThen(Collectors.toList(),list ->{
+							 list.sort((req1, req2) -> Long.compare(Long.parseLong(req1.getDisbTranch()), Long.parseLong(req2.getDisbTranch())));
+				                return list;
+			})));
+		updatePMVLPCumulativeReqResp(vlpUpdateCumulativeDisbursementRequestDTOMap);
+		});
+		*/
+    	if(iterationFlag.equals(RlmsSchedulerConstants.Y)) {
+    		return false;
+    	}
+		return failListDataSlice.hasNext();
+	}
+	
+	@Override
+	public void updatePMVLPCumulativeReqResp(Map<String, List<ELVLPUpdateCumulativeDisbursementRequestDTO>> vlpUpdateCumulativeDisbursementRequestDTOMap) {
+		
+		vlpUpdateCumulativeDisbursementRequestDTOMap.entrySet().stream().forEach(requestData -> {
+			
+			requestData.getValue().stream().forEach(dtoObj -> {
+				
+				ELVLPCheckLoanStatusResponseDTO elVlpEisUpdateLoanStatusResponseDTO = callPMVLPCumulativeUploadApi(dtoObj);
+				log.error("elVlpEisUpdateLoanStatusResponseStr Json :"	+ new Gson().toJson(elVlpEisUpdateLoanStatusResponseDTO));
+				if (null != elVlpEisUpdateLoanStatusResponseDTO
+						&& null != elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus()
+						&& elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus().equals("0")
+						&& null != elVlpEisUpdateLoanStatusResponseDTO.getEisResponse()
+						&& null != elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getVlpResponse()
+						&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getVlpResponse().size() > 0) {
+					if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
+							&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("S")) {
+						updateRevFeedStatusOfCumulativePMVLP(dtoObj.getDisbTranch(), dtoObj.getStudentAppID(), dtoObj.getStudentId(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(dtoObj)
+								, ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					} else if (StringUtils.isNotEmpty(elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus())
+							&& elVlpEisUpdateLoanStatusResponseDTO.getEisResponse().getStatus().equals("F")) {
+						updateRevFeedStatusOfCumulativePMVLP(dtoObj.getDisbTranch(), dtoObj.getStudentAppID(), dtoObj.getStudentId(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(dtoObj)
+								, ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					} else {
+						updateRevFeedStatusOfCumulativePMVLP(dtoObj.getDisbTranch(), dtoObj.getStudentAppID(), dtoObj.getStudentId(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(dtoObj)
+								, null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
+					}
+				} else if (null != elVlpEisUpdateLoanStatusResponseDTO
+						&& null != elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus()
+						&& elVlpEisUpdateLoanStatusResponseDTO.getResponseStatus().equals("1")) {
+					updateRevFeedStatusOfCumulativePMVLP(dtoObj.getDisbTranch(), dtoObj.getStudentAppID(), dtoObj.getStudentId(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(dtoObj)
+							, ConversionUtils.convertDtoToJsonString(elVlpEisUpdateLoanStatusResponseDTO), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+				} else {
+					updateRevFeedStatusOfCumulativePMVLP(dtoObj.getDisbTranch(), dtoObj.getStudentAppID(), dtoObj.getStudentId(), RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(dtoObj)
+							, null, RlmsSchedulerConstants.PMVLP_CHNL_ID);
+				}
+				
+			});
+			
+		});
+	}
+
+	@Override
+	public void updateRevFeedStatusOfCumulativePMVLP(String disbTranch, String studentAppID, String studentId,
+			String successFlag, String elVlpUpdateLoanMainRequestDTOStr, String elVlpEisUpdateLoanStatusResponseDTOStr, Long pmvlpChnlId) {
+		Optional<ApplELReverseFeedDataTrn> findByApplRevFeedId = applELReverseFeedDataRepository.findByTrancheNoAndStudentAppIdAndStudentId(Long.parseLong(disbTranch), studentAppID, studentId);
+		ApplELReverseFeedReqRespTrn revFeedReqRespData = applELReverseFeedReqRespRepository.findByApplELReverseFeedDataTrnAndChanelId(findByApplRevFeedId.get(), pmvlpChnlId);
+		if(revFeedReqRespData != null) {
+			revFeedReqRespData.setJsonReq(elVlpUpdateLoanMainRequestDTOStr);
+			revFeedReqRespData.setJsonResp(elVlpEisUpdateLoanStatusResponseDTOStr);
+			revFeedReqRespData.setNoRetrys((revFeedReqRespData.getNoRetrys()+1));
+			revFeedReqRespData.setLastModDate(new Date());
+			revFeedReqRespData.setIsSuccess(successFlag);
+			applELReverseFeedReqRespRepository.save(revFeedReqRespData);
+		}
+	}
+
+	@Override
+	public ELVLPCheckLoanStatusResponseDTO callPMVLPCumulativeUploadApi(ELVLPUpdateCumulativeDisbursementRequestDTO vlpUpdateCumulativeDisbursementRequestDTO) {
+		ELVLPCheckLoanStatusResponseDTO elVlpEisUpdateLoanStatusResponseDTO = new ELVLPCheckLoanStatusResponseDTO();
+		String userToken = AppUtils.generateRlmsToken(schedulerUtils.getExternalUser(), rsaAlgorithm);
+		try {
+			elVlpEisUpdateLoanStatusResponseDTO = ApiUtil.callRestTemplateIntegration(pmvlpIntCumulativeUploadUrl, vlpUpdateCumulativeDisbursementRequestDTO, ELVLPCheckLoanStatusResponseDTO.class, userToken);
+		}catch (HttpClientErrorException e) {
+			updateRevFeedStatusOfCumulativePMVLP(vlpUpdateCumulativeDisbursementRequestDTO.getDisbTranch(), vlpUpdateCumulativeDisbursementRequestDTO.getStudentAppID(), vlpUpdateCumulativeDisbursementRequestDTO.getStudentId(), 
+					RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(vlpUpdateCumulativeDisbursementRequestDTO)
+					, Long.valueOf(e.getStatusCode().value())+"-"+e.getStatusText(), RlmsSchedulerConstants.PMVLP_CHNL_ID);
+			log.error("HttpClientErrorException Ocurred :"	+Long.valueOf(e.getStatusCode().value())+"-"+e.getStatusText());
+		}catch (Exception e) {
+			updateRevFeedStatusOfCumulativePMVLP(vlpUpdateCumulativeDisbursementRequestDTO.getDisbTranch(), vlpUpdateCumulativeDisbursementRequestDTO.getStudentAppID(), vlpUpdateCumulativeDisbursementRequestDTO.getStudentId(), 
+					RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(vlpUpdateCumulativeDisbursementRequestDTO)
+					, e.getMessage() , RlmsSchedulerConstants.PMVLP_CHNL_ID);
+			log.error("HttpClientErrorException Ocurred :"	+e.getMessage());
+		}
+		return elVlpEisUpdateLoanStatusResponseDTO;
+	}
+	
+}
+
+
+
+
 Properties
 
-spring.quartz.job-store-type = jdbc
-spring.quartz.jdbc.initialize-schema=ALWAYS
-
-revers.feed.pmvlp.trigger.time=0 10 01-23 * * ?
-
-
-START_TIME :: 1782392321000
-NEXT_FIRE_TIME :: 1782395400000
+revers.feed.pmvlp.trigger.time=0 25 01-23/1 * * ?
+revers.feed.pmvlp.vlpstatusupload.inturl=someUrl
+revers.feed.pmvlp.vlpcumulativeupload.inturl=someUrl
+revers.feed.pmvlp.algorithm.mode.padding = someVal
+revers.feed.pmvlp.manual.enable=Y
+revers.feed.pmvlp.pool.batch.size=75
+revers.feed.pmvlp.iteration.flag=Y
