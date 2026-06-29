@@ -699,6 +699,64 @@ public class ReversFeedPMVLPUpdationServiceImpl implements ReversFeedPMVLPUpdati
 	
 }
 
+===========================================================
+
+package com.sbi.rlms.scheduler.listeners;
+
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+import org.quartz.JobListener;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+public class RlmsSchedulerJobListener implements JobListener {
+
+	private static final String RLMS_SCHEDULER_JOB_LISTENER_NAME="RlmsSchedulerJobListener";
+	
+	@Override
+	public String getName() {
+		return RLMS_SCHEDULER_JOB_LISTENER_NAME;
+	}
+
+	@Override
+	public void jobExecutionVetoed(JobExecutionContext arg0) {
+		 // default implementation ignored
+
+	}
+
+	@Override
+	public void jobToBeExecuted(JobExecutionContext arg0) {
+		 // default implementation ignored
+
+	}
+
+	@Override
+	public void jobWasExecuted(JobExecutionContext jobExecutionContext, JobExecutionException jobExecutionException) {
+		log.info("The Scheduler Job "+jobExecutionContext.getJobDetail().getDescription()+" completed . The next trigger time is :"+ jobExecutionContext.getNextFireTime());
+	}
+
+}
+
+=========================================================
+
+package com.sbi.rlms.scheduler.exceptions;
+
+public class BatchSchedulerRunTimeException extends RuntimeException {
+
+	private static final long serialVersionUID = 6093817451308313096L;
+
+	private String errorCode;
+	
+	public BatchSchedulerRunTimeException(String message) {
+		super(message);
+	}
+	
+	public BatchSchedulerRunTimeException(String errCode, String message) {
+		super(message);
+		this.errorCode = errCode;
+	}
+}
 
 
 Properties
