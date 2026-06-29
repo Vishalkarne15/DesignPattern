@@ -219,6 +219,9 @@ public class ReversFeedPMVLPBatchTasklet implements Tasklet {
 	@Value("${revers.feed.pmvlp.manual.enable}")
 	private String pmvlpTriggerEnable;
 	
+	@Value("${revers.feed.pmvlp.pool.batch.size}")
+	private String batchSizePool;
+	
 	@Autowired
 	private ReversFeedPMVLPService reversFeedPMVLPService;
 	
@@ -228,9 +231,9 @@ public class ReversFeedPMVLPBatchTasklet implements Tasklet {
 		
 		log.error("is pmvlpTriggerEnable :: " + pmvlpTriggerEnable);
 		if(pmvlpTriggerEnable.equalsIgnoreCase(RlmsSchedulerConstants.Y)) {
-			reversFeedPMVLPService.loadPMVLPMannualJSONRequest();
+			loadPMVLPMannualJSONRequest();
 		}
-		
+				
 		/*
 		Map<Long, ELVLPUpdateLoanMainRequestDTO> loadPMVLPJSONRequestMap = reversFeedPMVLPService.loadPMVLPJSONRequest();
 		reversFeedPMVLPService.updatePMVLPReqResp(loadPMVLPJSONRequestMap);
@@ -239,8 +242,24 @@ public class ReversFeedPMVLPBatchTasklet implements Tasklet {
 		return RepeatStatus.FINISHED;
 		
 	}
+	
+	public void loadPMVLPMannualJSONRequest() {
+		int batchSize = Integer.parseInt(batchSizePool);
+        boolean hasMoreRecords = true;
+        while (hasMoreRecords) {
+        	hasMoreRecords=reversFeedPMVLPService.prepareAndPushData(batchSize);
+        	try {
+        		log.error("Watting for 5 second to clean.........");
+				Thread.sleep(5000l);
+			} catch (InterruptedException e) {
+				log.error("Exception in InterruptedException :: "+e.getMessage());
+			}
+        }
+        
+	}
 
 }
+
 
 ==================================================
 
@@ -412,11 +431,11 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 				}catch (HttpClientErrorException e) {
 					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 							Long.valueOf(e.getStatusCode().value())+"-"+e.getStatusText(), RlmsSchedulerConstants.PMVLP_CHNL_ID);
-					log.error("HttpClientErrorException Ocurred :"	+e.getStackTrace());
+					log.error("HttpClientErrorException Ocurred : {}", e.getMessage(), e);
 				}catch (Exception e) {
 					updateRevFeedStatusOfPMVLP(requestData.getKey(),RlmsSchedulerConstants.Y, ConversionUtils.convertDtoToJsonString(requestData.getValue()), 
 							e.getMessage() , RlmsSchedulerConstants.PMVLP_CHNL_ID);
-					log.error("HttpClientErrorException Ocurred :"	+e.getStackTrace());
+					log.error("HttpClientErrorException Ocurred : {}", e.getMessage(), e);
 				}
 			
 		});
@@ -448,6 +467,7 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
 	}
 	
 
+	/*
 	@Override
 	public void loadPMVLPMannualJSONRequest() {
 		int batchSize = Integer.parseInt(batchSizePool);
@@ -463,9 +483,10 @@ public class ReversFeedPMVLPServiceImpl implements ReversFeedPMVLPService{
         }
         
 	}
-	
+	*/
 	
 	@Transactional
+	@Override
 	public Boolean prepareAndPushData(int batchSize) {
 		
 		Slice<ApplELReverseFeedReqRespTrn> failListDataSlice = applELReverseFeedReqRespRepository
