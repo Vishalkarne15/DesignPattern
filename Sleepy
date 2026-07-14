@@ -1,1 +1,92 @@
-Yes
+String Logic Programs
+Reverse a string without using built-in methods
+Check if two strings are anagrams
+Find first non-repeating character
+Find longest substring without repeating characters
+Check if string is a palindrome (optimized)
+Count vowels and consonants
+Find duplicate characters in string
+Remove duplicate characters while maintaining order
+Check if string rotation of another
+Compress string (aaabb → a3b2)
+Count frequency of each character
+Longest substring without repeating characters
+Longest palindromic substring
+Smallest window containing another string
+Find all anagram substrings
+Find longest common prefix
+Find missing characters in alphabet (pangram logic)
+Find max occurring character
+Sort characters by frequency
+Check balanced parentheses in string
+Longest repeating subsequence
+
+Array Logic Programs
+Find missing number in array
+Find second largest element
+Find all pairs with given sum
+Move all zeros to end
+Rotate array by K positions
+Find duplicate numbers
+Find intersection of two arrays
+Find longest consecutive sequence
+Sort array without using sort()
+Find majority element (Boyer–Moore)
+Find largest and smallest element in one pass
+Reverse an array in-place
+Remove duplicates from sorted array in-place
+Check if array is sorted and rotated
+Count frequency of each element
+Find median of two sorted arrays
+
+Array Searching & Sorting Logic
+Binary search (iterative)
+Binary search in rotated sorted array
+Find first and last occurrence of element
+Find peak element
+Sort array of 0s, 1s, and 2s (Dutch National Flag)
+Merge two sorted arrays without extra space
+Quick Sort implementation
+Merge Sort implementation
+Find k-th smallest element (Quick Select)
+Sort array based on another array
+
+Number & Math Logic Programs
+Check if number is prime (optimized)
+Check if a number is palindrome
+Reverse integer with overflow handling
+Check if number is perfect
+Check Armstrong number
+Find factorial (iterative & recursive)
+Find GCD and LCM
+Fibonacci series (iterative & recursive)
+Check perfect number
+Count digits in number
+Swap two numbers without temp
+Find trailing zeros in factorial
+Check if number is automorphic
+Check if number is strong number
+Power of number (fast exponentiation)
+Check if number is power of 2
+Nth Fibonacci using dynamic programming
+Find GCD (Euclidean algorithm)
+Find all divisors of a number
+Check if number is Harshad (Niven)
+Check if number is happy number
+Check if number is ugly number
+Find sum of primes up to N
+Find next prime number
+Check if number is neon number
+Check if number is spy number
+Check if number is magic number
+Find square root without using library
+Reverse bits of a number
+Convert decimal to binary without library
+Convert binary to decimal without library
+Check if number is palindrome in binary
+Find HCF of array of numbers
+Find missing number in 1 to N series
+Count numbers divisible by A and B in range
+Check if number is Kaprekar number
+Check if number is Duck number
+Find number of trailing ones in binary
