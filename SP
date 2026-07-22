@@ -1,0 +1,141 @@
+create or replace PROCEDURE                                                                              EL_APPL_CLS_AFTR_SNC_SP_TST_1 (
+    PI_LIMIT_PURGE_ACC IN NUMBER,
+    PO_APPL_PRSN_DTL               OUT SYS_REFCURSOR
+)AS 
+V_USER_ID NUMBER; V_ROLE_ID NUMBER ; V_UNIT_ID NUMBER; V_REJECT_RSON NUMBER; V_NXT_STG_ASSGN VARCHAR2(5);V_PRCS_ID  VARCHAR2(5);
+V_ERROR_OUT VARCHAR2(100);V_APPL_REV_FEED_ID NUMBER;
+L_CUR SYS_REFCURSOR;
+CU_APPL_REF_NO NUMBER;
+CU_PRSN_FIRST_NAME VARCHAR2(100);
+CU_EMAIL_ID VARCHAR2(100);
+CU_APPL_REV_FEED_ID NUMBER;
+BEGIN
+for J IN
+--(
+--select appl_id from rlms_trans.appl_dtl_trn adt where adt.schm_grp_id=27 and adt.appl_stage_id='SG5' 
+--and not exists
+--(select a.appl_id from rlms_trans.LN_ACCT_SVC_DTL_TRN a where a.appl_id=adt.appl_id and SVC_NAME='Loan Account Creation')
+--and months_between(sysdate,adt.LAST_MOD_DATE)>6 and rownum<1
+--union
+--select appl_id from rlms_trans.appl_dtl_trn adt where adt.schm_grp_id=27 and adt.appl_stage_id='SG5' 
+--and not exists
+--(
+--select aedt.appl_id from RLMS_TRANS.APPL_EL_DISB_SCHED_DTL_TRN aedt where aedt.TRANCHE_NO=1 and aedt.DISBURSE_STS_ID =681 and aedt.appl_id=adt.appl_id
+--union
+--select b.appl_id from RLMS_TRANS.subsqt_additional_dtl_trn a,
+--rlms_trans.LN_ACCT_SVC_DTL_TRN b where ltrim(b.LN_ACCT_NO,'0')=ltrim(a.LN_ACCT_NO,'0') and b.SVC_NAME='Loan Account Creation'
+----and DISBURSED_AMOUNT<>0 
+--and b.appl_id=adt.appl_id
+--)
+--and months_between(sysdate,adt.LAST_MOD_DATE)>6 and rownum<2
+--) LOOP
+
+(
+select appl_id from (
+select appl_id from rlms_trans.appl_dtl_trn adt where adt.schm_grp_id=27 and adt.appl_stage_id='SG5' and adt.appl_id not in 
+(select a.appl_id from rlms_trans.LN_ACCT_SVC_DTL_TRN a ,rlms_trans.appl_dtl_trn b
+where a.appl_id=b.appl_id and SVC_NAME='Loan Account Creation' and b.schm_grp_id=27 and b.appl_stage_id='SG5')
+and months_between(sysdate,adt.LAST_MOD_DATE)>6 
+union
+select appl_id from rlms_trans.appl_dtl_trn adt where adt.schm_grp_id=27 and adt.appl_stage_id='SG5' 
+and adt.appl_id not in 
+(
+select aedt.appl_id from RLMS_TRANS.APPL_EL_DISB_SCHED_DTL_TRN aedt,rlms_trans.appl_dtl_trn b where aedt.TRANCHE_NO=1 and aedt.DISBURSE_STS_ID =681 and aedt.appl_id=b.appl_id and b.schm_grp_id=27 and b.appl_stage_id='SG5' 
+union
+select b.appl_id from RLMS_TRANS.subsqt_additional_dtl_trn a,
+rlms_trans.LN_ACCT_SVC_DTL_TRN b,rlms_trans.appl_dtl_trn c where ltrim(b.LN_ACCT_NO,'0')=ltrim(a.LN_ACCT_NO,'0') and b.SVC_NAME='Loan Account Creation'
+--and DISBURSED_AMOUNT<>0 
+and b.appl_id=c.appl_id and c.schm_grp_id=27 and c.appl_stage_id='SG5' 
+)
+and months_between(sysdate,adt.LAST_MOD_DATE)>6
+) a where rownum<2
+)loop
+
+DBMS_OUTPUT.PUT_LINE('appl_id '||J.appl_id);
+
+BEGIN
+V_NXT_STG_ASSGN := 'SG98';
+V_REJECT_RSON:=3147;
+
+SELECT PRCS_ID INTO V_PRCS_ID FROM RLMS_WF.WF_PRCS_STG_MAP_MST WHERE WF_STAGE_ID = V_NXT_STG_ASSGN;
+
+
+SELECT UM.USER_ID,URM.ROLE_ID , URM.UNIT_ID
+INTO V_USER_ID, V_ROLE_ID, V_UNIT_ID
+FROM RLMS_MAST.USER_MST UM,RLMS_MAST.USER_ROLE_MAP_MST  URM
+WHERE UM.USER_ID=URM.USER_ID
+AND UPPER(UM.FIRST_NAME)='SYSTEM_USER'
+AND URM.IS_ACTIVE='Y'
+AND UM.IS_ACTIVE='Y' 
+AND URM.DEF_ROLE='Y';
+
+
+
+--UPDATE RLMS_TRANS.APPL_DTL_TRN
+--SET APPL_STAGE_ID = V_NXT_STG_ASSGN , APPL_ASSGN_TO = V_USER_ID, APPL_ALLOC_UNIT = V_UNIT_ID, APPL_ASSGN_TO_ROLE_ID = V_ROLE_ID , APPL_ALLOC_TEAM = NULL, LAST_MOD_BY=V_USER_ID, LAST_MOD_DATE = SYSTIMESTAMP,
+--LAST_PRCS_BY=V_USER_ID,
+--REJECT_RSN_ID=V_REJECT_RSON
+--WHERE APPL_ID = J.APPL_ID;
+--
+--DELETE FROM RLMS_TRANS.APPL_EL_PRCS_STAGE_MAP_TRN A WHERE A.APPL_ID=J.APPL_ID;
+--DELETE FROM RLMS_TRANS.APPL_PRCS_STAGE_MAP_TRN A WHERE A.APPL_ID=J.APPL_ID;
+--
+--
+--Insert into RLMS_TRANS.APPL_PRCS_STAGE_MAP_TRN (APPL_ID,PRCS_ID,STAGE_ID,CREATED_DATE,CREATED_BY,LAST_MOD_DATE,LAST_MOD_BY,APPL_ALLOC_UNIT,APPL_ASSGN_TO,APPL_ASSGN_TO_ROLE_ID,APPL_ALLOC_TEAM)
+--values (J.APPL_ID,V_PRCS_ID,V_NXT_STG_ASSGN,SYSTIMESTAMP,V_USER_ID,SYSTIMESTAMP,V_USER_ID,V_UNIT_ID,V_USER_ID,V_ROLE_ID,NULL);
+--
+--
+--
+--Insert into RLMS_WF.WF_EXEC_HIST_TRN (WF_EXEC_HIST_ID,PRCS_ID,APPL_ID,UNIT_ID,TEAM_ID,ROLE_ID,USER_ID,WF_STEP_MODE,CREATED_DATE,CREATED_BY,LAST_MOD_DATE,LAST_MOD_BY,WF_STAGE_ID) 
+--values (RLMS_WF.WF_EXEC_HIST_ID_SEQ.nextval ,V_PRCS_ID,J.APPL_ID,V_UNIT_ID,NULL,V_ROLE_ID,V_USER_ID,'FW',SYSTIMESTAMP,V_USER_ID,SYSTIMESTAMP,V_USER_ID, V_NXT_STG_ASSGN)
+--;
+
+RLMS_TRANS.APPL_EL_REVERSE_FEED_SP(
+  PI_APPL_ID => J.APPL_ID,
+  PI_STAGE_ID => V_NXT_STG_ASSGN,
+  PI_TRANCHE_ID => NULL,
+  PI_INIT_USER => 'SCH',
+  PO_ERROR_OUT => V_ERROR_OUT,
+  PO_APPL_REV_FEED_ID => V_APPL_REV_FEED_ID);
+COMMIT;
+
+EXCEPTION WHEN OTHERS THEN 
+           DBMS_OUTPUT.PUT_LINE('Error : '|| SQLERRM ||' : '|| DBMS_UTILITY.FORMAT_ERROR_BACKTRACE );
+           RLMS_TRANS.EXCEPTION_HANDLE(SQLCODE,substr(SQLERRM,0,999),DBMS_UTILITY.FORMAT_ERROR_BACKTRACE,J.APPL_ID,'RLMS_TRANS.EL_APPL_CLOSE_AFTER_SANC_SP',J.APPL_ID,J.APPL_ID);
+           ROLLBACK;
+
+END;
+END LOOP;
+
+OPEN PO_APPL_PRSN_DTL FOR
+    SELECT (SELECT D.APPL_REF_NO FROM RLMS_TRANS.APPL_DTL_TRN D WHERE D.APPL_ID=A.APPL_ID)APPL_REF_NO,
+    LISTAGG((SELECT PRSN_FIRST_NAME FROM RLMS_TRANS.prsn_DTL_trn P WHERE P.PRSN_ID=B.PRSN_ID),',') WITHIN GROUP (ORDER BY CASE WHEN B.APPLCT_TYPE_ID=48 THEN 1 WHEN B.APPLCT_TYPE_ID=47 THEN 2 ELSE 3 END ASC) PRSN_FIRST_NAME,
+    LISTAGG((SELECT CNTC FROM RLMS_TRANS.prsn_cntc_trn P WHERE P.PRSN_ID=B.PRSN_ID AND P.CNTC_TYPE_ID= 127),',') WITHIN GROUP (ORDER BY CASE WHEN B.APPLCT_TYPE_ID=48 THEN 1 WHEN B.APPLCT_TYPE_ID=47 THEN 2 ELSE 3 END ASC) EMAIL_ID,
+    A.APPL_REV_FEED_ID 
+    FROM 
+    RLMS_TRANS.APPL_EL_REVERSE_FEED_DATA_TRN A,
+    RLMS_TRANS.APPL_PRSN_MAP_TRN B
+    WHERE A.INIT_USER='SCH' --AND TRUNC(A.CREATED_DATE)= TRUNC(SYSDATE)
+    AND A.APPL_ID=B.APPL_ID
+    -- Start : Added By Vishal 260720
+    AND A.IS_SENT IS NULL OR A.IS_SENT='N'
+    -- END : Added By Vishal 260720
+    group by A.APPL_ID,A.APPL_REV_FEED_ID FETCH FIRST 100 ROWS ONLY;
+    
+    -- Start : Added By Vishal 260721
+    LOOP 
+      FETCH PO_APPL_PRSN_DTL INTO CU_APPL_REF_NO, CU_PRSN_FIRST_NAME, CU_EMAIL_ID, CU_APPL_REV_FEED_ID;
+      EXIT WHEN PO_APPL_PRSN_DTL%NOTFOUND;
+        DBMS_OUTPUT.PUT_LINE('CU_APPL_PRSN_DTL : '||CU_APPL_REV_FEED_ID);
+        --UPDATE RLMS_TRANS.APPL_EL_REVERSE_FEED_DATA_TRN A SET A.IS_SENT='Y' WHERE A.APPL_REV_FEED_ID=CU_APPL_REV_FEED_ID;     
+    END LOOP;
+    COMMIT;
+    -- END : Added By Vishal 260721
+
+
+
+EXCEPTION WHEN OTHERS THEN 
+           DBMS_OUTPUT.PUT_LINE('Error : '|| SQLERRM ||' : '|| DBMS_UTILITY.FORMAT_ERROR_BACKTRACE );
+           RLMS_TRANS.EXCEPTION_HANDLE(SQLCODE,substr(SQLERRM,0,999),DBMS_UTILITY.FORMAT_ERROR_BACKTRACE,0,'RLMS_TRANS.EL_APPL_CLOSE_AFTER_SANC_SP',0,0);
+           
+END EL_APPL_CLS_AFTR_SNC_SP_TST_1;
